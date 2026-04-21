@@ -7,6 +7,8 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Aswanidev-vs/Gllama/internal/backend"
@@ -43,6 +45,7 @@ func (b *CLIBackend) UnloadModel(ctx context.Context) error {
 func (b *CLIBackend) Generate(ctx context.Context, opts backend.Options) (*backend.Response, error) {
 	args := b.buildArgs(opts)
 	cmd := exec.CommandContext(ctx, b.BinaryPath, args...)
+	cmd.Env = modelsEnv()
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -67,6 +70,7 @@ func (b *CLIBackend) Stream(ctx context.Context, opts backend.Options, cb func(*
 	args := b.buildArgs(opts)
 	// Add flags for streaming if llama-cli supports them or just pipe stdout
 	cmd := exec.CommandContext(ctx, b.BinaryPath, args...)
+	cmd.Env = modelsEnv()
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -98,6 +102,10 @@ func (b *CLIBackend) Stream(ctx context.Context, opts backend.Options, cb func(*
 		}
 	}()
 
+	startTime := time.Now()
+	var firstTokenTime time.Time
+	tokenCount := 0
+
 	reader := bufio.NewReader(stdout)
 	for {
 		line, err := reader.ReadString('\n')
@@ -106,6 +114,11 @@ func (b *CLIBackend) Stream(ctx context.Context, opts backend.Options, cb func(*
 				break
 			}
 			return err
+		}
+
+		tokenCount++
+		if firstTokenTime.IsZero() {
+			firstTokenTime = time.Now()
 		}
 
 		resp := &backend.Response{
@@ -126,8 +139,21 @@ func (b *CLIBackend) Stream(ctx context.Context, opts backend.Options, cb func(*
 		return err
 	}
 
-	// Send final response
-	return cb(&backend.Response{Done: true})
+	totalDuration := time.Since(startTime)
+	var ttft float64
+	if !firstTokenTime.IsZero() {
+		ttft = float64(firstTokenTime.Sub(startTime).Milliseconds())
+	}
+	tps := float64(tokenCount) / totalDuration.Seconds()
+
+	// Send final response with telemetry
+	return cb(&backend.Response{
+		Done:          true,
+		TokenCount:    tokenCount,
+		TPS:           tps,
+		TTFT:          ttft,
+		TotalDuration: float64(totalDuration.Milliseconds()),
+	})
 }
 
 func (b *CLIBackend) Embed(ctx context.Context, opts backend.Options) ([]float32, error) {
@@ -144,4 +170,48 @@ func (b *CLIBackend) Capabilities() backend.Capabilities {
 
 func (b *CLIBackend) buildArgs(opts backend.Options) []string {
 	return wrapper.BuildArguments(opts)
+}
+
+// modelsEnv returns the current environment with HF_HOME redirected to the
+// project's models folder so downloads don't go to the default C drive cache.
+func modelsEnv() []string {
+	modelsDir := resolveModelsDir()
+	env := os.Environ()
+	filtered := env[:0]
+	for _, e := range env {
+		key := strings.ToUpper(e)
+		if strings.HasPrefix(key, "HF_HOME=") || strings.HasPrefix(key, "HUGGINGFACE_HUB_CACHE=") {
+			continue
+		}
+		filtered = append(filtered, e)
+	}
+	filtered = append(filtered, "HF_HOME="+modelsDir)
+	filtered = append(filtered, "HUGGINGFACE_HUB_CACHE="+modelsDir)
+	return filtered
+}
+
+func resolveModelsDir() string {
+	if execPath, err := os.Executable(); err == nil {
+		execDir := filepath.Dir(execPath)
+		projectRoot := filepath.Dir(execDir)
+
+		candidates := []string{
+			filepath.Join(projectRoot, "models"),
+			filepath.Join(execDir, "models"),
+		}
+
+		for _, candidate := range candidates {
+			if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+				return candidate
+			}
+		}
+
+		modelsDir := filepath.Join(projectRoot, "models")
+		os.MkdirAll(modelsDir, 0755)
+		return modelsDir
+	}
+
+	modelsDir, _ := filepath.Abs("models")
+	os.MkdirAll(modelsDir, 0755)
+	return modelsDir
 }

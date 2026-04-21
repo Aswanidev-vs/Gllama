@@ -95,6 +95,12 @@ type Response struct {
 	Percentage float64 `json:"percentage,omitempty"` // 0-100
 	Speed      string  `json:"speed,omitempty"`      // e.g. "1.2 MB/s"
 	TotalSize  string  `json:"total_size,omitempty"` // e.g. "3.2 GB"
+
+	// Telemetry fields
+	TPS           float64 `json:"tps,omitempty"`            // Tokens per second
+	TTFT          float64 `json:"ttft_ms,omitempty"`        // Time to first token (ms)
+	TokenCount    int     `json:"token_count,omitempty"`    // Total tokens generated
+	TotalDuration float64 `json:"total_duration_ms,omitempty"` // Total generation time (ms)
 }
 
 // Capabilities defines what the backend supports
