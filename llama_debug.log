@@ -1,0 +1,22 @@
+load_backend: loaded RPC backend from G:\Gllama\bin\deps\ggml-rpc.dll
+load_backend: loaded Vulkan backend from G:\Gllama\bin\deps\ggml-vulkan.dll
+load_backend: loaded CPU backend from G:\Gllama\bin\deps\ggml-cpu-haswell.dll
+get_hf_plan: file 'Q4_K_M' not found in repository
+error: failed to download model from Hugging Face
+load_backend: loaded RPC backend from G:\Gllama\bin\deps\ggml-rpc.dll
+load_backend: loaded Vulkan backend from G:\Gllama\bin\deps\ggml-vulkan.dll
+load_backend: loaded CPU backend from G:\Gllama\bin\deps\ggml-cpu-haswell.dll
+load_backend: loaded RPC backend from G:\Gllama\bin\deps\ggml-rpc.dll
+load_backend: loaded Vulkan backend from G:\Gllama\bin\deps\ggml-vulkan.dll
+load_backend: loaded CPU backend from G:\Gllama\bin\deps\ggml-cpu-haswell.dll
+load_backend: loaded RPC backend from G:\Gllama\bin\deps\ggml-rpc.dll
+load_backend: loaded Vulkan backend from G:\Gllama\bin\deps\ggml-vulkan.dll
+load_backend: loaded CPU backend from G:\Gllama\bin\deps\ggml-cpu-haswell.dll
+load_backend: loaded RPC backend from G:\Gllama\bin\deps\ggml-rpc.dll
+load_backend: loaded Vulkan backend from G:\Gllama\bin\deps\ggml-vulkan.dll
+load_backend: loaded CPU backend from G:\Gllama\bin\deps\ggml-cpu-haswell.dll
+load_backend: loaded RPC backend from G:\Gllama\bin\deps\ggml-rpc.dll
+load_backend: loaded Vulkan backend from G:\Gllama\bin\deps\ggml-vulkan.dll
+load_backend: loaded CPU backend from G:\Gllama\bin\deps\ggml-cpu-haswell.dll
+load_backend: loaded RPC backend from G:\Gllama\bin\deps\ggml-rpc.dll
+load_backend: loaded Vulkan backend from G:\Gllama\bin\deps\ggml-vulkan.dll

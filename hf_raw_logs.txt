@@ -1,0 +1,3 @@
+load_backend: loaded RPC backend from G:\Gllama\bin\deps\ggml-rpc.dll
+load_backend: loaded Vulkan backend from G:\Gllama\bin\deps\ggml-vulkan.dll
+load_backend: loaded CPU backend from G:\Gllama\bin\deps\ggml-cpu-haswell.dll
