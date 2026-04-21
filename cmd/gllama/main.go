@@ -138,6 +138,13 @@ func main() {
 	flag.Usage = printUsage
 	flag.Parse()
 
+	// Show logo and usage if no arguments and no flags are set
+	if flag.NArg() == 0 && model == "" && hfRepo == "" && !interactive {
+		printLogo()
+		printUsage()
+		return
+	}
+
 	command := "run"
 	if flag.NArg() > 0 {
 		switch flag.Arg(0) {
@@ -210,46 +217,50 @@ func executeRun(serverAddr, model, prompt string, stream bool, maxTokens int, te
 			os.Exit(1)
 		}
 
-		execPath, _ := os.Executable()
-		execDir := filepath.Dir(execPath)
-		llamaCliPath := filepath.Join(execDir, "deps", "llama-cli")
-		if strings.Contains(strings.ToLower(os.Getenv("OS")), "windows") {
-			llamaCliPath += ".exe"
-		}
-
-		if _, err := os.Stat(llamaCliPath); err == nil {
-			opts := backend.Options{
-				Model:       model,
-				Prompt:      prompt,
-				Stream:      stream,
-				MaxTokens:   maxTokens,
-				Temperature: temperature,
-				Threads:     threads,
-				HFRepo:      hfRepo,
-				HFFile:      hfFile,
-				TurboQuant:  turboQuant,
-			}
-			runDirect(llamaCliPath, opts)
-			return
-		}
-
 		fmt.Printf("%sServer not detected.%s Starting gllama-server...\n", ColorGray, ColorReset)
 		spin := NewSpinner("Warming up")
 		spin.Start()
 		if err := startLocalServer(); err != nil {
 			spin.Stop()
 			fmt.Printf("%sWarning:%s Failed to start server: %v\n", ColorYellow, ColorReset, err)
+			
+			// Fallback to runDirect only if server fails to start
+			execPath, _ := os.Executable()
+			execDir := filepath.Dir(execPath)
+			llamaCliPath := filepath.Join(execDir, "deps", "llama-cli")
+			if strings.Contains(strings.ToLower(os.Getenv("OS")), "windows") {
+				llamaCliPath += ".exe"
+			}
+			if _, err := os.Stat(llamaCliPath); err == nil {
+				opts := backend.Options{
+					Model:       model,
+					Prompt:      prompt,
+					Stream:      stream,
+					MaxTokens:   maxTokens,
+					Temperature: temperature,
+					Threads:     threads,
+					HFRepo:      hfRepo,
+					HFFile:      hfFile,
+					TurboQuant:  turboQuant,
+				}
+				runDirect(llamaCliPath, opts)
+				return
+			}
 		} else {
+			// Wait for server to respond
+			started := false
 			for i := 0; i < 20; i++ {
 				time.Sleep(500 * time.Millisecond)
 				if isServerRunning(serverAddr) {
 					spin.Stop()
-					fmt.Println(ColorGreen + "✓ Server started." + ColorReset)
+					fmt.Println(ColorGreen + "✓ Server ready." + ColorReset)
+					started = true
 					break
 				}
 			}
-			if !isServerRunning(serverAddr) {
+			if !started {
 				spin.Stop()
+				fmt.Printf("%sWarning:%s Server started but timed out. Trying to continue...\n", ColorYellow, ColorReset)
 			}
 		}
 	}
