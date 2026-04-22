@@ -24,4 +24,7 @@ run: cli
 	./$(CLI_TARGET)
 
 clean:
-	@if exist $(BIN_DIR) rd /s /q $(BIN_DIR)
+	if exist bin rmdir /s /q bin
+
+dev:
+	powershell -ExecutionPolicy Bypass -File watch.ps1

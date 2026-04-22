@@ -212,6 +212,26 @@ func main() {
 			fmt.Printf("%sError:%s Please specify a Hugging Face repo to pull.\n", ColorYellow, ColorReset)
 			return
 		}
+
+		// Pull always uses runDirect to show progress
+		execPath, _ := os.Executable()
+		execDir := filepath.Dir(execPath)
+		llamaCliPath := filepath.Join(execDir, "deps", "llama-cli")
+		if strings.Contains(strings.ToLower(os.Getenv("OS")), "windows") {
+			llamaCliPath += ".exe"
+		}
+
+		if _, err := os.Stat(llamaCliPath); err == nil {
+			opts := backend.Options{
+				HFRepo: hfRepo,
+				HFFile: hfFile,
+			}
+			runDirect(llamaCliPath, opts)
+			return
+		}
+
+		fmt.Printf("%sError:%s llama-cli not found. Please run 'gllama setup' first.\n", ColorYellow, ColorReset)
+		return
 	}
 
 	if command == "tq" {
@@ -225,57 +245,56 @@ func main() {
 }
 
 func executeRun(serverAddr, model, prompt string, stream bool, maxTokens int, temperature float64, threads int, hfRepo, hfFile string, interactive bool, turboQuant string) {
-	if isLocalAddr(serverAddr) && !isServerRunning(serverAddr) {
-		if err := deps.EnsureDependencies(false); err != nil {
-			fmt.Printf("%sError:%s Gllama requires llama.cpp to run.\n", ColorYellow, ColorReset)
-			os.Exit(1)
-		}
+	execPath, _ := os.Executable()
+	execDir := filepath.Dir(execPath)
+	llamaCliPath := filepath.Join(execDir, "deps", "llama-cli")
+	if strings.Contains(strings.ToLower(os.Getenv("OS")), "windows") {
+		llamaCliPath += ".exe"
+	}
 
+	// Always prefer direct execution if available locally
+	if _, err := os.Stat(llamaCliPath); err == nil {
+		opts := backend.Options{
+			Model:       model,
+			Prompt:      prompt,
+			Stream:      stream,
+			MaxTokens:   maxTokens,
+			Temperature: temperature,
+			Threads:     threads,
+			HFRepo:      hfRepo,
+			HFFile:      hfFile,
+			TurboQuant:  turboQuant,
+		}
+		runDirect(llamaCliPath, opts)
+		return
+	}
+
+	// If server is not running and we don't have a local engine, try starting server
+	if isLocalAddr(serverAddr) && !isServerRunning(serverAddr) {
 		fmt.Printf("%sServer not detected.%s Starting gllama-server...\n", ColorGray, ColorReset)
 		spin := NewSpinner("Warming up")
 		spin.Start()
 		if err := startLocalServer(); err != nil {
 			spin.Stop()
-			fmt.Printf("%sWarning:%s Failed to start server: %v\n", ColorYellow, ColorReset, err)
+			fmt.Printf("%sError:%s Failed to start server: %v\n", ColorYellow, ColorReset, err)
+			return
+		}
 
-			// Fallback to runDirect only if server fails to start
-			execPath, _ := os.Executable()
-			execDir := filepath.Dir(execPath)
-			llamaCliPath := filepath.Join(execDir, "deps", "llama-cli")
-			if strings.Contains(strings.ToLower(os.Getenv("OS")), "windows") {
-				llamaCliPath += ".exe"
-			}
-			if _, err := os.Stat(llamaCliPath); err == nil {
-				opts := backend.Options{
-					Model:       model,
-					Prompt:      prompt,
-					Stream:      stream,
-					MaxTokens:   maxTokens,
-					Temperature: temperature,
-					Threads:     threads,
-					HFRepo:      hfRepo,
-					HFFile:      hfFile,
-					TurboQuant:  turboQuant,
-				}
-				runDirect(llamaCliPath, opts)
-				return
-			}
-		} else {
-			// Wait for server to respond
-			started := false
-			for i := 0; i < 20; i++ {
-				time.Sleep(500 * time.Millisecond)
-				if isServerRunning(serverAddr) {
-					spin.Stop()
-					fmt.Println(ColorGreen + "✓ Server ready." + ColorReset)
-					started = true
-					break
-				}
-			}
-			if !started {
+		// Wait for server to respond
+		started := false
+		for i := 0; i < 20; i++ {
+			time.Sleep(500 * time.Millisecond)
+			if isServerRunning(serverAddr) {
 				spin.Stop()
-				fmt.Printf("%sWarning:%s Server started but timed out. Trying to continue...\n", ColorYellow, ColorReset)
+				fmt.Println(ColorGreen + "✓ Server ready." + ColorReset)
+				started = true
+				break
 			}
+		}
+		if !started {
+			spin.Stop()
+			fmt.Printf("%sWarning:%s Server timed out. Try running 'gllama serve' manually.\n", ColorYellow, ColorReset)
+			return
 		}
 	}
 
@@ -512,10 +531,50 @@ func runDirect(binaryPath string, opts backend.Options) {
 	cmd.Env = setModelsEnv()
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
 
-	if err := cmd.Run(); err != nil {
-		os.Exit(1)
+	// If it's a pull/download, filter the noise from Stderr
+	if opts.Prompt == "" && opts.HFRepo != "" {
+		stderr, _ := cmd.StderrPipe()
+		if err := cmd.Start(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error starting llama-cli: %v\n", err)
+			return
+		}
+
+		// Filter stderr line by line
+		scanner := bufio.NewScanner(stderr)
+		// Custom split function to handle carriage returns for progress bars
+		scanner.Split(func(data []byte, atEOF bool) (advance int, token []byte, err error) {
+			if atEOF && len(data) == 0 {
+				return 0, nil, nil
+			}
+			if i := bytes.IndexAny(data, "\r\n"); i >= 0 {
+				return i + 1, data[0:i], nil
+			}
+			if atEOF {
+				return len(data), data, nil
+			}
+			return 0, nil, nil
+		})
+
+		for scanner.Scan() {
+			line := scanner.Text()
+			// Hide the noisy connection canceled retries
+			if strings.Contains(line, "Connection handling canceled") || strings.Contains(line, "status: -1") {
+				continue
+			}
+			// Print everything else, maintaining the carriage return/newline behavior
+			if strings.HasSuffix(scanner.Text(), "\r") {
+				fmt.Print(line + "\r")
+			} else {
+				fmt.Println(line)
+			}
+		}
+		cmd.Wait()
+	} else {
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			os.Exit(1)
+		}
 	}
 }
 
