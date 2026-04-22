@@ -1,0 +1,1 @@
+i need to immplement the terminal logo design and also wish to include the custom progress bar

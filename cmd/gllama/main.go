@@ -33,22 +33,36 @@ const (
 )
 
 func printLogo() {
-	logo := `
-  %s________  %s.____    %s.____       %s_____      %s_____      %s_____   
- %s/  _____/  %s|    |   %s|    |     %s/  _  \    %s/     \    %s/  _  \  
-%s/   \  ___  %s|    |   %s|    |    %s/  /_\  \  %s/  \ /  \  %s/  /_\  \ 
-%s\    \_\  \ %s|    |___%s|    |___%s/    |    \%s/    Y    \%s/    |    \
- %s\______  / %s|_______%s|_______%s\____|__  /%s\____|__  /%s\____|__  /
-        %s\/         %s\/       %s\/        %s\/         %s\/         %s\/ 
+	banner := `
+   %s ██████╗ ██╗      ██╗      █████╗ ███╗   ███╗ █████╗ 
+   %s██╔════╝ ██║      ██║     ██╔══██╗████╗ ████║██╔══██╗
+   %s██║  ███╗██║      ██║     ███████║██╔████╔██║███████║
+   %s██║   ██║██║      ██║     ██╔══██║██║╚██╔╝██║██╔══██║
+   %s╚██████╔╝███████╗ ███████╗██║  ██║██║ ╚═╝ ██║██║  ██║
+   %s ╚═════╝ ╚══════╝ ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝
 `
-	fmt.Printf(logo, 
-		ColorCyan, ColorCyan, ColorCyan, ColorCyan, ColorCyan, ColorCyan,
-		ColorCyan, ColorCyan, ColorCyan, ColorCyan, ColorCyan, ColorCyan,
-		ColorBlue, ColorBlue, ColorBlue, ColorBlue, ColorBlue, ColorBlue,
-		ColorBlue, ColorBlue, ColorBlue, ColorBlue, ColorBlue, ColorBlue,
-		ColorCyan, ColorCyan, ColorCyan, ColorCyan, ColorCyan, ColorCyan,
-		ColorCyan, ColorCyan, ColorCyan, ColorCyan, ColorCyan, ColorCyan)
-	fmt.Printf("\n    %sGo-first bindings for llama.cpp %s| %sv1.0.0%s\n\n", ColorGray, ColorBlue, ColorGreen, ColorReset)
+	fmt.Printf(banner,
+		ColorCyan,
+		ColorCyan,
+		ColorCyan,
+		ColorBlue,
+		ColorBlue,
+		ColorCyan,
+	)
+
+	// divider
+	fmt.Printf("\n   %s──────────────────────────────────────────────────────────%s\n\n",
+		ColorBlue, ColorReset)
+
+	// tagline
+	fmt.Printf("   %sGo-first bindings for llama.cpp %s• %s%s%s\n\n",
+		ColorGray,
+		ColorYellow,
+		ColorBold+ColorGreen,
+		"v1.0.0",
+		ColorReset,
+	)
+	
 }
 
 func printUsage() {
@@ -223,7 +237,7 @@ func executeRun(serverAddr, model, prompt string, stream bool, maxTokens int, te
 		if err := startLocalServer(); err != nil {
 			spin.Stop()
 			fmt.Printf("%sWarning:%s Failed to start server: %v\n", ColorYellow, ColorReset, err)
-			
+
 			// Fallback to runDirect only if server fails to start
 			execPath, _ := os.Executable()
 			execDir := filepath.Dir(execPath)
@@ -346,7 +360,7 @@ func generate(serverAddr string, opts backend.Options) {
 		fmt.Println()
 		if lastResp != nil && lastResp.Done {
 			fmt.Printf("\n%s\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500%s\n", ColorGray, ColorReset)
-			fmt.Printf("%sTPS:%s %.2f %s|%s %sTTFT:%s %.2fms %s|%s %sTokens:%s %d\n", 
+			fmt.Printf("%sTPS:%s %.2f %s|%s %sTTFT:%s %.2fms %s|%s %sTokens:%s %d\n",
 				ColorCyan, ColorReset, lastResp.TPS, ColorGray, ColorReset,
 				ColorCyan, ColorReset, lastResp.TTFT, ColorGray, ColorReset,
 				ColorCyan, ColorReset, lastResp.TokenCount)
@@ -419,14 +433,14 @@ func removeModel(name string) {
 func startServer() {
 	printLogo()
 	fmt.Printf("%sStarting Gllama Server...%s\n", ColorBold, ColorReset)
-	
+
 	execPath, _ := os.Executable()
 	execDir := filepath.Dir(execPath)
 	serverName := "gllama-server"
 	if strings.Contains(strings.ToLower(os.Getenv("OS")), "windows") {
 		serverName += ".exe"
 	}
-	
+
 	cmd := exec.Command(filepath.Join(execDir, serverName))
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
