@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Aswanidev-vs/Gllama/internal/backend"
@@ -34,12 +35,12 @@ const (
 
 func printLogo() {
 	banner := `
-   %s ██████╗ ██╗      ██╗      █████╗ ███╗   ███╗ █████╗ 
-   %s██╔════╝ ██║      ██║     ██╔══██╗████╗ ████║██╔══██╗
-   %s██║  ███╗██║      ██║     ███████║██╔████╔██║███████║
-   %s██║   ██║██║      ██║     ██╔══██║██║╚██╔╝██║██╔══██║
-   %s╚██████╔╝███████╗ ███████╗██║  ██║██║ ╚═╝ ██║██║  ██║
-   %s ╚═════╝ ╚══════╝ ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝
+   %s ██████╗  ██╗      ██╗      █████╗ ███╗   ███╗ █████╗ 
+   %s██╔════╝  ██║      ██║     ██╔══██╗████╗ ████║██╔══██╗
+   %s██║  ███╗ ██║      ██║     ███████║██╔████╔██║███████║
+   %s██║   ██║ ██║      ██║     ██╔══██║██║╚██╔╝██║██╔══██║
+   %s╚██████╔╝ ███████╗ ███████╗██║  ██║██║ ╚═╝ ██║██║  ██║
+   %s ╚═════╝  ╚══════╝ ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝
 `
 	fmt.Printf(banner,
 		ColorCyan,
@@ -62,12 +63,12 @@ func printLogo() {
 		"v1.0.0",
 		ColorReset,
 	)
-	
+
 }
 
 func printUsage() {
-	fmt.Printf("%sUsage:%s gllama <command> [options]\n\n", ColorBold, ColorReset)
-	fmt.Printf("%sCommands:%s\n", ColorBold, ColorReset)
+	fmt.Printf("\n%sUsage:%s gllama <command> [options]\n\n", ColorCyan, ColorReset)
+	fmt.Printf("%sCommands:%s\n", ColorCyan, ColorReset)
 	fmt.Printf("  %srun%s       Run a model (default)\n", ColorGreen, ColorReset)
 	fmt.Printf("  %spull%s      Download a model from Hugging Face\n", ColorGreen, ColorReset)
 	fmt.Printf("  %slist%s      List registered models\n", ColorGreen, ColorReset)
@@ -76,9 +77,41 @@ func printUsage() {
 	fmt.Printf("  %sserve%s     Start the Gllama server\n", ColorGreen, ColorReset)
 	fmt.Printf("  %stq%s        Run with TurboQuant optimization\n", ColorGreen, ColorReset)
 	fmt.Printf("  %ssetup%s     Setup dependencies\n", ColorGreen, ColorReset)
+	fmt.Printf("  %shelp%s      Show this help message\n", ColorGreen, ColorReset)
 	fmt.Println()
-	fmt.Printf("%sOptions:%s\n", ColorBold, ColorReset)
+	fmt.Printf("%sOptions:%s\n", ColorCyan, ColorReset)
 	flag.PrintDefaults()
+	fmt.Println()
+}
+
+func printDetailedHelp() {
+	printLogo()
+	fmt.Printf("\n%sGllama - The Go-First CLI for llama.cpp%s\n", ColorBold+ColorCyan, ColorReset)
+	fmt.Printf("%s──────────────────────────────────────────────────────────%s\n\n", ColorBlue, ColorReset)
+
+	fmt.Printf("%sManagement Commands:%s\n", ColorCyan, ColorReset)
+	fmt.Printf("  %spull <repo>%s      Download a model from Hugging Face\n", ColorGreen, ColorReset)
+	fmt.Printf("  %slist%s               List your locally downloaded models\n", ColorGreen, ColorReset)
+	fmt.Printf("  %srm <model>%s        Remove a model file from disk\n", ColorGreen, ColorReset)
+	fmt.Printf("  %sps%s                 Show currently active models on the server\n", ColorGreen, ColorReset)
+	fmt.Printf("  %ssetup%s              Install or update llama.cpp dependencies\n", ColorGreen, ColorReset)
+	fmt.Println()
+
+	fmt.Printf("%sExecution Commands:%s\n", ColorCyan, ColorReset)
+	fmt.Printf("  %srun <model>%s       Start an interactive chat with a model\n", ColorGreen, ColorReset)
+	fmt.Printf("  %stq <mode>%s         Run with TurboQuant (lite, q8, q4)\n", ColorGreen, ColorReset)
+	fmt.Printf("  %sserve%s              Start the OpenAI-compatible Gllama API server\n", ColorGreen, ColorReset)
+	fmt.Println()
+
+	fmt.Printf("%sInteractive Shortcuts:%s\n", ColorCyan, ColorReset)
+	fmt.Printf("  %s/exit%s              Quit the interactive session\n", ColorGray, ColorReset)
+	fmt.Printf("  %s/regen%s             Regenerate the last response\n", ColorGray, ColorReset)
+	fmt.Printf("  %s/read <file>%s       Load a text file into the context\n", ColorGray, ColorReset)
+	fmt.Println()
+
+	fmt.Printf("%sOptions:%s\n", ColorCyan, ColorReset)
+	flag.PrintDefaults()
+	fmt.Println()
 }
 
 type Spinner struct {
@@ -162,11 +195,33 @@ func main() {
 	command := "run"
 	if flag.NArg() > 0 {
 		switch flag.Arg(0) {
-		case "run", "pull", "list", "rm", "ps", "serve", "tq", "setup":
+		case "run", "pull", "list", "rm", "ps", "serve", "tq", "setup", "help":
 			command = flag.Arg(0)
+			// If a second positional arg exists and no -model flag was set, use it as the model
+			if model == "" && flag.NArg() >= 2 {
+				model = flag.Arg(1)
+			}
 		default:
-			if prompt == "" {
+			// If the first arg looks like a .gguf file, treat it as a model
+			if strings.HasSuffix(flag.Arg(0), ".gguf") && model == "" {
+				model = flag.Arg(0)
+			} else if prompt == "" {
 				prompt = strings.Join(flag.Args(), " ")
+			}
+		}
+	}
+
+	// Resolve bare model filename to full path in models/ directory
+	if model != "" && !filepath.IsAbs(model) {
+		if _, err := os.Stat(model); os.IsNotExist(err) {
+			// Try resolving from models directory
+			modelsDir := resolveModelsDir()
+			candidate := filepath.Join(modelsDir, model)
+			if !strings.HasSuffix(candidate, ".gguf") {
+				candidate += ".gguf"
+			}
+			if _, err := os.Stat(candidate); err == nil {
+				model = candidate
 			}
 		}
 	}
@@ -187,6 +242,11 @@ func main() {
 
 	if command == "ps" {
 		listActiveModels(serverAddr)
+		return
+	}
+
+	if command == "help" {
+		printDetailedHelp()
 		return
 	}
 
@@ -213,24 +273,16 @@ func main() {
 			return
 		}
 
-		// Pull always uses runDirect to show progress
-		execPath, _ := os.Executable()
-		execDir := filepath.Dir(execPath)
-		llamaCliPath := filepath.Join(execDir, "deps", "llama-cli")
-		if strings.Contains(strings.ToLower(os.Getenv("OS")), "windows") {
-			llamaCliPath += ".exe"
-		}
-
-		if _, err := os.Stat(llamaCliPath); err == nil {
-			opts := backend.Options{
-				HFRepo: hfRepo,
-				HFFile: hfFile,
-			}
-			runDirect(llamaCliPath, opts)
+		llamaCliPath := findLlamaCli()
+		if llamaCliPath == "" {
+			fmt.Printf("%sError:%s llama-cli not found. Please run 'gllama setup' first.\n", ColorYellow, ColorReset)
 			return
 		}
-
-		fmt.Printf("%sError:%s llama-cli not found. Please run 'gllama setup' first.\n", ColorYellow, ColorReset)
+		opts := backend.Options{
+			HFRepo: hfRepo,
+			HFFile: hfFile,
+		}
+		runDirect(llamaCliPath, opts)
 		return
 	}
 
@@ -245,15 +297,10 @@ func main() {
 }
 
 func executeRun(serverAddr, model, prompt string, stream bool, maxTokens int, temperature float64, threads int, hfRepo, hfFile string, interactive bool, turboQuant string) {
-	execPath, _ := os.Executable()
-	execDir := filepath.Dir(execPath)
-	llamaCliPath := filepath.Join(execDir, "deps", "llama-cli")
-	if strings.Contains(strings.ToLower(os.Getenv("OS")), "windows") {
-		llamaCliPath += ".exe"
-	}
+	llamaCliPath := findLlamaCli()
 
 	// Always prefer direct execution if available locally
-	if _, err := os.Stat(llamaCliPath); err == nil {
+	if llamaCliPath != "" {
 		opts := backend.Options{
 			Model:       model,
 			Prompt:      prompt,
@@ -525,56 +572,280 @@ func startLocalServer() error {
 	return cmd.Start()
 }
 
+// findLlamaCli searches for the llama-cli binary in multiple locations,
+// allowing gllama to be run from the project root or from PATH.
+func findLlamaCli() string {
+	binaryName := "llama-cli"
+	if strings.Contains(strings.ToLower(os.Getenv("OS")), "windows") {
+		binaryName += ".exe"
+	}
+
+	var searchPaths []string
+
+	// 1. Relative to executable (works for ./bin/gllama or installed in go/bin)
+	if execPath, err := os.Executable(); err == nil {
+		execDir := filepath.Dir(execPath)
+		searchPaths = append(searchPaths, filepath.Join(execDir, "deps", binaryName))
+		// Also check same dir as executable
+		searchPaths = append(searchPaths, filepath.Join(execDir, binaryName))
+	}
+
+	// 2. Relative to CWD (works for running from project root)
+	if cwd, err := os.Getwd(); err == nil {
+		searchPaths = append(searchPaths, filepath.Join(cwd, "bin", "deps", binaryName))
+		searchPaths = append(searchPaths, filepath.Join(cwd, binaryName))
+	}
+
+	for _, p := range searchPaths {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+
+	// 3. System PATH (fallback for global installation)
+	if path, err := exec.LookPath(binaryName); err == nil {
+		return path
+	}
+
+	return ""
+}
+
+// isLlamaCppBannerLine returns true if the line is part of the llama.cpp
+// startup banner that should be suppressed in favour of Gllama branding.
+func isLlamaCppBannerLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return true // blank lines within the banner region
+	}
+	lower := strings.ToLower(trimmed)
+	// Backend loading noise
+	if strings.Contains(lower, "load_backend:") ||
+		strings.Contains(lower, "load_model:") ||
+		strings.Contains(lower, "loading model") ||
+		strings.Contains(lower, "main: interactive mode") ||
+		strings.Contains(lower, "main: llama_model_loader") ||
+		strings.Contains(lower, "system_info:") ||
+		strings.HasPrefix(lower, "main: ") {
+		return true
+	}
+	// ASCII art (box-drawing / block characters used in llama.cpp logo)
+	if strings.ContainsAny(line, "█░▒▓▄▀╗╚╝╔║═╠╣╬╩╦") {
+		return true
+	}
+	// Build / model / modalities info lines
+	if (strings.HasPrefix(lower, "build") ||
+		strings.HasPrefix(lower, "model") ||
+		strings.HasPrefix(lower, "modalities") ||
+		strings.HasPrefix(lower, "version")) && strings.Contains(line, ":") {
+		return true
+	}
+	// Available commands section
+	if strings.Contains(lower, "available commands:") {
+		return true
+	}
+	if strings.HasPrefix(trimmed, "/") {
+		// Suppress any /command help lines
+		cmds := []string{"/exit", "/regen", "/clear", "/read", "/glob", "/help"}
+		for _, c := range cmds {
+			if strings.HasPrefix(trimmed, c) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// printGllamaRunBanner prints the Gllama branding for an interactive run session.
+func printGllamaRunBanner(modelName string) {
+	banner := `
+   %s ██████╗  ██╗      ██╗      █████╗ ███╗   ███╗ █████╗ 
+   %s██╔════╝  ██║      ██║     ██╔══██╗████╗ ████║██╔══██╗
+   %s██║  ███╗ ██║      ██║     ███████║██╔████╔██║███████║
+   %s██║   ██║ ██║      ██║     ██╔══██║██║╚██╔╝██║██╔══██║
+   %s╚██████╔╝ ███████╗ ███████╗██║  ██║██║ ╚═╝ ██║██║  ██║
+   %s ╚═════╝  ╚══════╝ ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝
+`
+	fmt.Fprintf(os.Stderr, banner,
+		ColorCyan, ColorCyan, ColorCyan,
+		ColorBlue, ColorBlue, ColorCyan,
+	)
+	fmt.Fprintf(os.Stderr, "\n   %s──────────────────────────────────────────────────────────%s\n\n",
+		ColorBlue, ColorReset)
+	fmt.Fprintf(os.Stderr, "   %sGo-first bindings for llama.cpp %s• %s%s%s\n\n",
+		ColorGray, ColorYellow, ColorBold+ColorGreen, "v1.0.0", ColorReset)
+
+	if modelName != "" {
+		displayName := filepath.Base(modelName)
+		fmt.Fprintf(os.Stderr, "   %smodel%s    : %s\n", ColorGray, ColorReset, displayName)
+	}
+
+	fmt.Fprintf(os.Stderr, "\n   %savailable commands:%s\n", ColorGray, ColorReset)
+	fmt.Fprintf(os.Stderr, "     %s/exit%s or %sCtrl+C%s    stop or exit\n", ColorGreen, ColorReset, ColorGreen, ColorReset)
+	fmt.Fprintf(os.Stderr, "     %s/regen%s             regenerate the last response\n", ColorGreen, ColorReset)
+	fmt.Fprintf(os.Stderr, "     %s/clear%s             clear the chat history\n", ColorGreen, ColorReset)
+
+	fmt.Fprintf(os.Stderr, "\n   %sgllama commands:%s\n", ColorGray, ColorReset)
+	fmt.Fprintf(os.Stderr, "     %spull%s <repo>        download models from hugging face\n", ColorGreen, ColorReset)
+	fmt.Fprintf(os.Stderr, "     %slist%s               list your local models\n", ColorGreen, ColorReset)
+	fmt.Fprintf(os.Stderr, "     %srm%s <model>         remove a downloaded model\n", ColorGreen, ColorReset)
+	fmt.Fprintf(os.Stderr, "     %sps%s                 list active models on server\n", ColorGreen, ColorReset)
+	fmt.Fprintf(os.Stderr, "     %stq%s <mode>          run with turboquant (lite, q8, q4)\n", ColorGreen, ColorReset)
+	fmt.Fprintf(os.Stderr, "     %sserve%s              start the gllama api server\n", ColorGreen, ColorReset)
+	fmt.Fprintf(os.Stderr, "     %ssetup%s              re-run dependency setup\n", ColorGreen, ColorReset)
+	fmt.Fprintln(os.Stderr)
+}
+
+type EphemeralFilter struct {
+	dest          io.Writer
+	buf           bytes.Buffer
+	isRaw         bool
+	mu            sync.Mutex
+	isThinking    bool
+	thinkingLines int
+}
+
+func (f *EphemeralFilter) Write(p []byte) (n int, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	// High-speed fast-pass for the chat phase
+	if f.isRaw && !f.isThinking {
+		if bytes.IndexByte(p, '[') == -1 && bytes.IndexByte(p, '<') == -1 && 
+		   !bytes.Contains(p, []byte("Thinking Process")) {
+			return f.dest.Write(p)
+		}
+	}
+
+	remaining := p
+	for len(remaining) > 0 {
+		if !f.isRaw {
+			// Phase 1: Startup/Banner Filtering
+			idx := bytes.IndexByte(remaining, '\n')
+			promptIdx := bytes.Index(remaining, []byte(">"))
+
+			if promptIdx != -1 && (idx == -1 || promptIdx < idx) {
+				// Found a potential prompt
+				f.buf.Write(remaining[:promptIdx+1])
+				if bytes.HasSuffix(f.buf.Bytes(), []byte(">")) || bytes.HasSuffix(f.buf.Bytes(), []byte("> ")) {
+					f.isRaw = true
+					f.dest.Write([]byte("\r\033[K" + ColorBold + ColorGreen + "> " + ColorReset))
+					f.buf.Reset()
+					return len(p), nil // Switch to raw for the rest of this chunk
+				}
+				remaining = remaining[promptIdx+1:]
+				continue
+			}
+
+			if idx != -1 {
+				f.buf.Write(remaining[:idx+1])
+				line := f.buf.String()
+				if !isLlamaCppBannerLine(line) {
+					f.dest.Write([]byte(line))
+				}
+				f.buf.Reset()
+				remaining = remaining[idx+1:]
+			} else {
+				f.buf.Write(remaining)
+				break
+			}
+		} else {
+			// Phase 2: Chat/Thinking Processing
+			// Check for end-thinking marker even on partial lines
+			lowerRem := strings.ToLower(string(remaining))
+			markers := []string{"[end thinking]", "</thought>", "end thinking:", "[end]", "[ prompt:", "\n\n"}
+			foundEnd := false
+			tagLen := 0
+			endIdx := -1
+			
+			for _, m := range markers {
+				if idx := strings.Index(lowerRem, m); idx != -1 {
+					if m == "\n\n" && f.thinkingLines < 2 {
+						continue
+					}
+					foundEnd = true
+					endIdx = idx
+					tagLen = len(m)
+					break
+				}
+			}
+
+			if f.isThinking && foundEnd {
+				f.isThinking = false
+				// RESTORE CURSOR and CLEAR DOWN (Professional Collapse)
+				f.dest.Write([]byte("\033[u\033[J"))
+				f.thinkingLines = 0
+				
+				if strings.Contains(lowerRem[endIdx:endIdx+tagLen], "[ prompt:") {
+					// Keep footer
+				} else {
+					remaining = remaining[endIdx+tagLen:]
+					continue
+				}
+			}
+
+			idx := bytes.IndexByte(remaining, '\n')
+			if idx == -1 {
+				// Partial line
+				if f.isThinking {
+					if strings.Contains(lowerRem, "[start thinking]") || strings.Contains(lowerRem, "<thought>") || 
+					   strings.Contains(lowerRem, "thinking process:") {
+						f.isThinking = true
+						f.thinkingLines = 0
+						// SAVE CURSOR POSITION
+						f.dest.Write([]byte("\033[s"))
+						f.dest.Write([]byte(fmt.Sprintf("%s(thinking...)\n%s", ColorGray, ColorReset)))
+						f.thinkingLines++
+						break 
+					}
+					f.dest.Write([]byte(ColorGray + string(remaining) + ColorReset))
+				} else {
+					f.dest.Write(remaining)
+				}
+				break
+			}
+
+			line := remaining[:idx+1]
+			lower := strings.ToLower(string(line))
+			
+			if strings.Contains(lower, "[start thinking]") || strings.Contains(lower, "<thought>") || 
+			   strings.Contains(lower, "thinking process:") {
+				f.isThinking = true
+				f.thinkingLines = 0
+				// SAVE CURSOR POSITION
+				f.dest.Write([]byte("\033[s"))
+				f.dest.Write([]byte(fmt.Sprintf("%s(thinking...)\n%s", ColorGray, ColorReset)))
+				f.thinkingLines++
+			} else if f.isThinking {
+				f.dest.Write([]byte(ColorGray + string(line) + ColorReset))
+				f.thinkingLines++
+			} else {
+				f.dest.Write(line)
+			}
+			remaining = remaining[idx+1:]
+		}
+	}
+	return len(p), nil
+}
+
 func runDirect(binaryPath string, opts backend.Options) {
+	printGllamaRunBanner(opts.Model)
+
 	args := wrapper.BuildArguments(opts)
 	cmd := exec.Command(binaryPath, args...)
 	cmd.Env = setModelsEnv()
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
 
-	// If it's a pull/download, filter the noise from Stderr
-	if opts.Prompt == "" && opts.HFRepo != "" {
-		stderr, _ := cmd.StderrPipe()
-		if err := cmd.Start(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error starting llama-cli: %v\n", err)
+	stdoutFilter := &EphemeralFilter{dest: os.Stdout}
+	stderrFilter := &EphemeralFilter{dest: os.Stderr}
+
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = stdoutFilter
+	cmd.Stderr = stderrFilter
+
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 130 {
 			return
 		}
-
-		// Filter stderr line by line
-		scanner := bufio.NewScanner(stderr)
-		// Custom split function to handle carriage returns for progress bars
-		scanner.Split(func(data []byte, atEOF bool) (advance int, token []byte, err error) {
-			if atEOF && len(data) == 0 {
-				return 0, nil, nil
-			}
-			if i := bytes.IndexAny(data, "\r\n"); i >= 0 {
-				return i + 1, data[0:i], nil
-			}
-			if atEOF {
-				return len(data), data, nil
-			}
-			return 0, nil, nil
-		})
-
-		for scanner.Scan() {
-			line := scanner.Text()
-			// Hide the noisy connection canceled retries
-			if strings.Contains(line, "Connection handling canceled") || strings.Contains(line, "status: -1") {
-				continue
-			}
-			// Print everything else, maintaining the carriage return/newline behavior
-			if strings.HasSuffix(scanner.Text(), "\r") {
-				fmt.Print(line + "\r")
-			} else {
-				fmt.Println(line)
-			}
-		}
-		cmd.Wait()
-	} else {
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			os.Exit(1)
-		}
+		fmt.Fprintf(os.Stderr, "\n%sNote:%s session ended (%v)\n", ColorGray, ColorReset, err)
 	}
 }
 
@@ -630,6 +901,15 @@ func setModelsEnv() []string {
 }
 
 func resolveModelsDir() string {
+	// 1. Check CWD first (most common for local dev)
+	if cwd, err := os.Getwd(); err == nil {
+		candidate := filepath.Join(cwd, "models")
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			return candidate
+		}
+	}
+
+	// 2. Check relative to executable
 	if execPath, err := os.Executable(); err == nil {
 		execDir := filepath.Dir(execPath)
 		projectRoot := filepath.Dir(execDir)
@@ -642,10 +922,13 @@ func resolveModelsDir() string {
 				return candidate
 			}
 		}
+		// Fallback: create in project root of executable
 		modelsDir := filepath.Join(projectRoot, "models")
 		os.MkdirAll(modelsDir, 0755)
 		return modelsDir
 	}
+
+	// 3. Last resort fallback
 	modelsDir, _ := filepath.Abs("models")
 	os.MkdirAll(modelsDir, 0755)
 	return modelsDir
