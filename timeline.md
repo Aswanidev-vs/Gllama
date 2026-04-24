@@ -39,3 +39,22 @@ some amount of delay for the > thing to first load up make it load along with th
      tq <mode>          run with turboquant (lite, q8, q4)
      serve              start the gllama api server
      setup              re-run dependency setup
+![alt text](image.png)
+
+ gllama serve
+
+    ██████╗  ██╗      ██╗      █████╗ ███╗   ███╗ █████╗ 
+   ██╔════╝  ██║      ██║     ██╔══██╗████╗ ████║██╔══██╗
+   ██║  ███╗ ██║      ██║     ███████║██╔████╔██║███████║
+   ██║   ██║ ██║      ██║     ██╔══██║██║╚██╔╝██║██╔══██║
+   ╚██████╔╝ ███████╗ ███████╗██║  ██║██║ ╚═╝ ██║██║  ██║
+    ╚═════╝  ╚══════╝ ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝╚═╝  ╚═╝
+
+   ──────────────────────────────────────────────────────────
+
+   Go-first bindings for llama.cpp • v1.0.0
+
+Starting Gllama Server...
+
+
+not working

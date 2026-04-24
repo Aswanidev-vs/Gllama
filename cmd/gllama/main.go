@@ -103,10 +103,24 @@ func printDetailedHelp() {
 	fmt.Printf("  %sserve%s              Start the OpenAI-compatible Gllama API server\n", ColorGreen, ColorReset)
 	fmt.Println()
 
+	fmt.Printf("%sTurboQuant Modes (Optimization Presets):%s\n", ColorCyan, ColorReset)
+	fmt.Printf("  %slite%s   Balanced Speed. Uses Q8_0 keys and F16 values for fast response.\n", ColorYellow, ColorReset)
+	fmt.Printf("  %sq8%s     High Precision. Uses Q8_0 for both K/V. Saves ~50%% memory.\n", ColorYellow, ColorReset)
+	fmt.Printf("  %sq4%s     Max Savings. Uses Q4_0 for both K/V. Best for 8GB GPUs/RAM.\n", ColorYellow, ColorReset)
+	fmt.Println()
+
+	fmt.Printf("%sManual Optimization (Advanced):%s\n", ColorCyan, ColorReset)
+	fmt.Printf("  Override any preset using these manual flags:\n")
+	fmt.Printf("  %s-ctk <type>%s    Set KV Cache Key type (f16, q8_0, q4_0, iq4_nl)\n", ColorGreen, ColorReset)
+	fmt.Printf("  %s-ctv <type>%s    Set KV Cache Value type (f16, q8_0, q4_0, iq4_nl)\n", ColorGreen, ColorReset)
+	fmt.Printf("  %s-fa <on|off>%s   Toggle Flash Attention for supported hardware\n", ColorGreen, ColorReset)
+	fmt.Printf("  %s-ngl <N>%s       Manually set number of layers to offload to GPU\n", ColorGreen, ColorReset)
+	fmt.Println()
+
 	fmt.Printf("%sInteractive Shortcuts:%s\n", ColorCyan, ColorReset)
 	fmt.Printf("  %s/exit%s              Quit the interactive session\n", ColorGray, ColorReset)
 	fmt.Printf("  %s/regen%s             Regenerate the last response\n", ColorGray, ColorReset)
-	fmt.Printf("  %s/read <file>%s       Load a text file into the context\n", ColorGray, ColorReset)
+	fmt.Printf("  %s/clear%s             Clear the chat history\n", ColorGray, ColorReset)
 	fmt.Println()
 
 	fmt.Printf("%sOptions:%s\n", ColorCyan, ColorReset)
@@ -197,9 +211,31 @@ func main() {
 		switch flag.Arg(0) {
 		case "run", "pull", "list", "rm", "ps", "serve", "tq", "setup", "help":
 			command = flag.Arg(0)
-			// If a second positional arg exists and no -model flag was set, use it as the model
-			if model == "" && flag.NArg() >= 2 {
-				model = flag.Arg(1)
+			
+			if command == "tq" {
+				if flag.NArg() >= 2 {
+					turboQuant = flag.Arg(1)
+					if flag.NArg() >= 3 && model == "" {
+						model = flag.Arg(2)
+					}
+				}
+			} else if command == "run" {
+				// Handle "gllama run tq lite model.gguf"
+				if flag.NArg() >= 2 && flag.Arg(1) == "tq" {
+					if flag.NArg() >= 3 {
+						turboQuant = flag.Arg(2)
+						if flag.NArg() >= 4 && model == "" {
+							model = flag.Arg(3)
+						}
+					}
+				} else if model == "" && flag.NArg() >= 2 {
+					model = flag.Arg(1)
+				}
+			} else {
+				// Standard command handling (list, ps, etc)
+				if model == "" && flag.NArg() >= 2 {
+					model = flag.Arg(1)
+				}
 			}
 		default:
 			// If the first arg looks like a .gguf file, treat it as a model
@@ -288,7 +324,13 @@ func main() {
 
 	if command == "tq" {
 		if turboQuant == "" {
-			turboQuant = "lite" // Default to lite if tq command used without flag
+			fmt.Printf("%sError:%s Please specify a TurboQuant mode (lite, q8, q4).\n", ColorYellow, ColorReset)
+			fmt.Printf("Usage: gllama tq <mode> <model>\n")
+			return
+		}
+		if model == "" {
+			fmt.Printf("%sError:%s Please specify a model for TurboQuant execution.\n", ColorYellow, ColorReset)
+			return
 		}
 	}
 
